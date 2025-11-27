@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 import tqdm
+from sklearn.metrics import mean_squared_error
 
 def train_model(model, train_loader, criterion, optimizer, num_epochs, device):
     model.to(device)
@@ -22,40 +23,39 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs, device):
             loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
-            epoch_loss += loss.item() * inputs.size(0)
+            epoch_loss += loss.item()
 
             progress_bar.set_postfix({'loss': loss.item()})
         
-        epoch_loss /= len(train_loader.dataset)
-        losses.append(epoch_loss)
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
+        avg_loss = epoch_loss / len(train_loader.dataset)
+        losses.append(avg_loss)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}')
     
     return losses
 
-def eval_model(model, test_loader, criterion, device):
+def eval_model(model, test_loader, criterion, device, scaler=None):
     model.eval()
     predictions = []
     actuals = []
-    total_loss = 0.0
-    losses = []
 
     progress_bar = tqdm.tqdm(test_loader, desc='Evaluating', unit='batch')
 
     with torch.no_grad():
         for inputs, targets in progress_bar:
             inputs, targets = inputs.to(device), targets.to(device)
-
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            total_loss += loss.item()
+            outputs = model(inputs)    
 
             predictions.append(outputs.cpu().numpy())
             actuals.append(targets.cpu().numpy())
 
-        val_loss = total_loss / len(test_loader)
-        losses.append(val_loss)
-
     predictions = np.concatenate(predictions, axis=0)
     actuals = np.concatenate(actuals, axis=0)
 
-    return predictions, actuals, losses
+    if scaler is not None:
+        predictions = scaler.inverse_transform(predictions)
+        actuals = scaler.inverse_transform(actuals)
+
+    rmse = np.sqrt(mean_squared_error(actuals, predictions))
+    print(f'RMSE: {rmse:.4f}')
+
+    return predictions, actuals
